@@ -11,6 +11,7 @@ random variables with mean 0 and standard deviation 1/sqrt(n_in), where n_in is 
 weights into the neuron, L2 regulariazation, and a backpropagation algorithm written from scratch
 """
 import numpy as np
+import random
 
 
 class Network():
@@ -25,9 +26,9 @@ class Network():
         Initialize weights and biases using Gaussian random variables
         Mean of 0, std of (1 for biases, 1/sqrt(n_in) for weights)
         """
-        self.biases = [np.random.randn(1,x) for x in self.sizes[1:]]
-        self.weights = [np.random.randn(y,x)/np.sqrt(x) for
-                        (x,y) in zip(sizes[1:], sizes[:-1])]
+        self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
+        self.weights = [np.random.randn(y, x)/np.sqrt(x)
+                        for x, y in zip(self.sizes[:-1], self.sizes[1:])]
     
     """
     Performs a forward pass of the given input argument, returns the output
@@ -60,7 +61,7 @@ class Network():
         activations = [input]
         ps_activations = []
 
-        for weight, bias in zip(self.weights, self.biases):
+        for bias, weight in zip(self.biases, self.weights):
             z = np.dot(weight, activation) + bias
             activation = self.activationF(z)
             ps_activations.append(z)
@@ -79,8 +80,69 @@ class Network():
             partial_b[-l] = delta
             partial_w[-l] = np.dot(delta, activations[-l-1].transpose())
         
-        return(parital_b, partial_w)
+        return(partial_b, partial_w)
+    
+    """
+    Performs stochastic gradient descent on given training data
+    @param training_data    Training data to perform gradient descent on
+    @param epohcs           Number of training epohcs to perform
+    @param mb_size          Desired size of mini-batch
+    @param lr               Desired learning rate
+    @param l2               Desired L2 regularization parameter
+    """
+    def stochastic_gradient_descent(self, training_data, epochs, mb_size, lr, l2):
+        training_accuracy = []
+        training_data = list(training_data)
+        n = len(training_data)
+
+        for epoch in range(epochs):
+            random.shuffle(training_data)
+            mini_batches = [
+                training_data[j:j+mb_size]
+                for j in range(0, n, mb_size)]
+            for mini_batch in mini_batches:
+                self.update_minibatch(
+                    mini_batch, lr, l2, len(training_data))
+
+            print("Epoch %s training complete" % epoch)
         
+        accuracy = self.accuracy(training_data)
+        training_accuracy.append(accuracy)
+        print("Accuracy on training data: {} / {}".format(accuracy, n))
+
+        return training_accuracy
+
+    """
+    Updates the weights and biases of the network given the current mini-batch in
+    stochastic gradient descent
+    @param mini_batch   List of 2-tuples (input, expected) of the current mini_batch
+    @param lr           Learning rate
+    @param l2           L2 Regularization paramater
+    @param tot_size     Total size of the training set
+    """
+    def update_minibatch(self, mini_batch, lr, l2, tot_size):
+        partial_b = [np.zeros(b.shape) for b in self.biases]
+        partial_w = [np.zeros(w.shape) for w in self.weights]
+
+        for input, expected in mini_batch:
+            new_partial_b, new_partial_w = self.backpropagation(input, expected)
+            partial_b = [nb+dnb for nb, dnb in zip(partial_b, new_partial_b)]
+            partial_w = [nw+dnw for nw, dnw in zip(partial_w, new_partial_w)]
+        # Updates weights (with L2 regularizaiton) and biases
+        self.weights = [(1-lr*(l2/tot_size))*w-(lr/len(mini_batch))*nw
+                        for w, nw in zip(self.weights, partial_w)]
+        self.biases = [b-(lr/len(mini_batch))*nb
+                       for b, nb in zip(self.biases, partial_b)]
+        
+
+    """
+    Returns the number of data points the network accurately classifies
+    @param data     The list of 2-tuples of data (input, expected)
+    @returns    Number of inputs from data that the network accurately classified
+    """
+    def accuracy(self, data):
+        test_results = [(np.argmax(self.feedforward(x)), y) for (x, y) in data]
+        return sum(int(x == y) for (x, y) in test_results)
 
     """
     Cross-entropy cost function
